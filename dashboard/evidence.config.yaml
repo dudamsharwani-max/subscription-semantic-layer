@@ -1,5 +1,5 @@
 project:
-  name: "my-project"
+  name: "subscription-semantic-layer"
   evidence: "0.9.3"
 
 pages: ./pages

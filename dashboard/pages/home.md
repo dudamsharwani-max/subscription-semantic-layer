@@ -24,6 +24,15 @@ the business keeps after refunds and store commission. The gap is
 {% value data="headline" value="realized_rate" fmt="pct1" /%} — a difference large enough
 that a cash forecast built on tracked revenue is wrong by roughly a quarter.
 
+
+> **Note on this page.** The charts and figures render blank without a warehouse
+> connection. Evidence Core (0.9+) executes SQL against a hosted warehouse and
+> does not support the local DuckDB file this project builds. The markup and
+> queries are correct; the data path is not available in this version. The same
+> numbers are reproducible via `dbt run` and `verification/run_harness.py` — see
+> the project README.
+
+
 ## The number that keeps moving
 
 ```sql settlement
