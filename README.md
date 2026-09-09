@@ -80,11 +80,14 @@ documentation rests on an unverified condition.
 
 ```bash
 # 1. generate seeds and load DuckDB
+python3 -m venv .venv && source .venv/bin/activate   # macOS system pip is managed
+pip install -r requirements.txt
+
 python3 data/generate.py --subscribers 20000 --seed 42
 python3 data/validate_seeds.py          # confirms all 12 conditions present
+python3 data/load_duckdb.py             # loads seeds into subscriptions.duckdb
 
 # 2. build the models
-pip install dbt-core dbt-duckdb duckdb
 dbt run --profiles-dir .                # 11 models
 
 # 3. dashboard

@@ -164,8 +164,15 @@ def report_text(results):
 
     diverged = [r for r in results if r["status"] in ("DIVERGES", "UNDER-SPECIFIED", "SHAPE-MISMATCH")]
     crit = [r for r in diverged if r["severity"] == "critical"]
+    errored = [r for r in results if r["status"] == "ERROR"]
     out.append("")
     out.append("=" * 100)
+    if errored:
+        out.append(f"{len(errored)} of {len(results)} questions FAILED TO RUN.")
+        out.append("No conclusion can be drawn from this run.")
+        out.append(f"First error: {errored[0]['error'][:120]}")
+        out.append("=" * 100)
+        return chr(10).join(out)
     out.append(f"{len(diverged)} of {len(results)} questions produce a wrong or "
                f"under-specified answer without the semantic layer "
                f"({len(crit)} critical).")
