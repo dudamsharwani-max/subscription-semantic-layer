@@ -3,6 +3,8 @@ title: Subscription Metrics
 description: Tracked vs realized revenue, trials, churn — with the caveats attached
 ---
 
+# Subscription Metrics
+
 ```sql headline
 select
   sum(tracked_revenue)                                    as tracked,
@@ -13,13 +15,13 @@ select
 from revenue_daily
 ```
 
-<BigValue data={headline} value=tracked fmt=usd0 title="Tracked Revenue"/>
-<BigValue data={headline} value=realized fmt=usd0 title="Realized Revenue"/>
-<BigValue data={headline} value=realized_rate fmt=pct1 title="Realized as % of Tracked"/>
+{% big_value data="headline" value="tracked" fmt="usd0" title="Tracked Revenue" /%}
+{% big_value data="headline" value="realized" fmt="usd0" title="Realized Revenue" /%}
+{% big_value data="headline" value="realized_rate" fmt="pct1" title="Realized as % of Tracked" /%}
 
 Tracked revenue is gross transaction value at purchase. Realized revenue is what
 the business keeps after refunds and store commission. The gap is
-<Value data={headline} value=realized_rate fmt=pct1/> — a difference large enough
+{% value data="headline" value="realized_rate" fmt="pct1" /%} — a difference large enough
 that a cash forecast built on tracked revenue is wrong by roughly a quarter.
 
 ## The number that keeps moving
@@ -35,24 +37,24 @@ group by 1
 order by 1
 ```
 
-<DataTable data={settlement}>
-  <Column id=status title="Period"/>
-  <Column id=tracked fmt=usd0/>
-  <Column id=realized fmt=usd0/>
-  <Column id=realized_rate title="Realized %" fmt=pct1 contentType=colorscale/>
-</DataTable>
+{% table data="settlement" %}
+  {% dimension value="status" title="Period" /%}
+  {% dimension value="tracked" fmt="usd0" /%}
+  {% dimension value="realized" fmt="usd0" /%}
+  {% measure value="realized_rate" title="Realized %" fmt="pct1" viz="color" /%}
+{% /table %}
 
 Refunds land a **median of 37 days** after purchase, with a p90 of 65 days. So
 realized revenue for any recent period is incomplete and **will fall** as refunds
 arrive. The provisional bucket above looks worse than the settled bucket, but that
 is not a performance decline — it is data that hasn't finished arriving.
 
-<Alert status="warning">
+{% callout type="warning" %}
 
 **Never compare a realized-revenue figure from the last 70 days against an older
 one.** Use tracked revenue for recent comparisons, or wait for the window to close.
 
-</Alert>
+{% /callout %}
 
 ```sql revenue_trend
 select
@@ -65,9 +67,15 @@ having count(*) > 20
 order by 1
 ```
 
-<LineChart data={revenue_trend} x=month y={["tracked","realized"]} yFmt=usd0
-  title="Tracked vs Realized Revenue by Month"
-  subtitle="The gap is refunds plus store commission. Recent months will still move."/>
+{% line_chart
+    data="revenue_trend"
+    x="month"
+    y=["tracked", "realized"]
+    y_fmt="usd0"
+    title="Tracked vs Realized Revenue by Month"
+    subtitle="The gap is refunds plus store commission. Recent months will still move."
+    handle_missing="gaps"
+/%}
 
 ## Trials
 
@@ -80,9 +88,9 @@ select
 from trials
 ```
 
-<BigValue data={trial_summary} value=trial_starts fmt=num0 title="Trial Starts"/>
-<BigValue data={trial_summary} value=sub_hour_cancels fmt=num0 title="Cancelled <1hr"/>
-<BigValue data={trial_summary} value=conversion_rate fmt=pct1 title="Conversion Rate"/>
+{% big_value data="trial_summary" value="trial_starts" fmt="num0" title="Trial Starts" /%}
+{% big_value data="trial_summary" value="sub_hour_cancels" fmt="num0" title="Cancelled <1hr" /%}
+{% big_value data="trial_summary" value="conversion_rate" fmt="pct1" title="Conversion Rate" /%}
 
 Sub-hour cancellations are **counted** as trial starts, because the acquisition
 spend that produced them was real and excluding them breaks reconciliation against
@@ -100,9 +108,14 @@ group by 1
 order by 1
 ```
 
-<BarChart data={conversion_by_plan} x=plan y=conversion_rate yFmt=pct1
-  title="Trial Conversion by Billing Period"
-  subtitle="Cohorted on trial END date — a trial cannot convert until it ends"/>
+{% bar_chart
+    data="conversion_by_plan"
+    x="plan"
+    y="conversion_rate"
+    y_fmt="pct1"
+    title="Trial Conversion by Billing Period"
+    subtitle="Cohorted on trial END date — a trial cannot convert until it ends"
+/%}
 
 Blended conversion moves whenever the product mix moves. Segment it or don't quote it.
 
@@ -119,11 +132,11 @@ group by 1
 order by 2 desc
 ```
 
-<DataTable data={churn_split}>
-  <Column id=type title="Churn Type"/>
-  <Column id=subscribers fmt=num0/>
-  <Column id=share fmt=pct1/>
-</DataTable>
+{% table data="churn_split" %}
+  {% dimension value="type" title="Churn Type" /%}
+  {% dimension value="subscribers" fmt="num0" /%}
+  {% dimension value="share" fmt="pct1" /%}
+{% /table %}
 
 Blended, this reads as a single retention problem. Split, it is one product problem
 and one payments problem — different owners, different fixes. Involuntary churn is
@@ -144,7 +157,7 @@ from active_subscribers
 where as_of_date = (select max(as_of_date) - 30 from active_subscribers)
 ```
 
-<DataTable data={active_now}/>
+{% table data="active_now" /%}
 
 `entitled_subscribers` counts anyone with product access, including grace period
 and billing retry. `paying_subscribers` counts only those actually paying. Both are

@@ -1,6 +1,5 @@
-title: Subscription Semantic Layer
-plugins:
-  components:
-    "@evidencedev/core-components": {}
-  datasources:
-    "@evidencedev/duckdb": {}
+project:
+  name: "my-project"
+  evidence: "0.9.3"
+
+pages: ./pages
