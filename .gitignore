@@ -15,3 +15,4 @@ target/
 logs/
 .user.yml
 .DS_Store
+.venv/
