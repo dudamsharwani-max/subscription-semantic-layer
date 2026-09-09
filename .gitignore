@@ -16,3 +16,5 @@ logs/
 .user.yml
 .DS_Store
 .venv/
+connection.yaml
+.md_token

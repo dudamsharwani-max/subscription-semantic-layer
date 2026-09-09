@@ -12,7 +12,7 @@ select
   sum(refunded_revenue)                                   as refunded,
   sum(commission)                                         as commission,
   sum(realized_revenue) / sum(tracked_revenue)            as realized_rate
-from revenue_daily
+from main_marts.fct_revenue_daily
 ```
 
 {% big_value data="headline" value="tracked" fmt="usd0" title="Tracked Revenue" /%}
@@ -25,14 +25,6 @@ the business keeps after refunds and store commission. The gap is
 that a cash forecast built on tracked revenue is wrong by roughly a quarter.
 
 
-> **Note on this page.** The charts and figures render blank without a warehouse
-> connection. Evidence Core (0.9+) executes SQL against a hosted warehouse and
-> does not support the local DuckDB file this project builds. The markup and
-> queries are correct; the data path is not available in this version. The same
-> numbers are reproducible via `dbt run` and `verification/run_harness.py` — see
-> the project README.
-
-
 ## The number that keeps moving
 
 ```sql settlement
@@ -41,7 +33,7 @@ select
   sum(tracked_revenue)                          as tracked,
   sum(realized_revenue)                         as realized,
   sum(realized_revenue)/sum(tracked_revenue)    as realized_rate
-from revenue_daily
+from main_marts.fct_revenue_daily
 group by 1
 order by 1
 ```
@@ -55,8 +47,10 @@ order by 1
 
 Refunds land a **median of 37 days** after purchase, with a p90 of 65 days. So
 realized revenue for any recent period is incomplete and **will fall** as refunds
-arrive. The provisional bucket above looks worse than the settled bucket, but that
-is not a performance decline — it is data that hasn't finished arriving.
+arrive. This dataset ends 2026-06-30, so every period in it has now settled and only
+one bucket appears above. On live data a second, provisional row sits alongside it,
+showing a lower realized rate — which is not a performance decline, but data that
+hasn't finished arriving.
 
 {% callout type="warning" %}
 
@@ -70,7 +64,7 @@ select
   date_trunc('month', revenue_date)  as month,
   sum(tracked_revenue)               as tracked,
   sum(realized_revenue)              as realized
-from revenue_daily
+from main_marts.fct_revenue_daily
 group by 1
 having count(*) > 20
 order by 1
@@ -94,7 +88,7 @@ select
   count(*) filter (where is_qualified)                      as qualified_starts,
   count(*) filter (where not is_qualified)                  as sub_hour_cancels,
   avg(case when trial_ended_at is not null then converted::int end) as conversion_rate
-from trials
+from main_marts.fct_trials
 ```
 
 {% big_value data="trial_summary" value="trial_starts" fmt="num0" title="Trial Starts" /%}
@@ -111,7 +105,7 @@ select
   case when product_id like '%annual%' then 'Annual' else 'Monthly' end as plan,
   count(*)                        as trials,
   avg(converted::int)             as conversion_rate
-from trials
+from main_marts.fct_trials
 where trial_ended_at is not null
 group by 1
 order by 1
@@ -136,7 +130,7 @@ select
                   else 'Involuntary (payment failed)' end as type,
   count(*)                                                as subscribers,
   count(*) * 1.0 / sum(count(*)) over ()                  as share
-from churn
+from main_marts.fct_churn
 group by 1
 order by 2 desc
 ```
@@ -162,8 +156,8 @@ select
   in_grace_period,
   in_billing_retry,
   entitled_humans
-from active_subscribers
-where as_of_date = (select max(as_of_date) - 30 from active_subscribers)
+from main_marts.fct_active_subscribers
+where as_of_date = (select max(as_of_date) - 30 from main_marts.fct_active_subscribers)
 ```
 
 {% table data="active_now" /%}
