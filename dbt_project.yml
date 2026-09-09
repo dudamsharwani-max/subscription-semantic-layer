@@ -1,0 +1,29 @@
+name: 'subscription_semantic_layer'
+version: '1.0.0'
+config-version: 2
+
+profile: 'subscription_semantic_layer'
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  subscription_semantic_layer:
+    staging:
+      +materialized: view
+      +schema: staging
+    marts:
+      +materialized: table
+      +schema: marts
+
+vars:
+  # The refund settlement window, in days. Realized revenue for any period
+  # inside this window is provisional. Sourced from observed p90 refund lag
+  # (65d) rounded up. See semantic/DEFINITIONS.md section 4.
+  refund_settlement_days: 70
+  # Trials cancelled faster than this are counted as trial starts but excluded
+  # from qualified_trial_starts. See DEFINITIONS.md section 1.
+  qualified_trial_minutes: 60

@@ -1,0 +1,17 @@
+data/seeds/*.csv
+__pycache__/
+*.pyc
+target/
+dbt_packages/
+logs/
+.env
+*.duckdb
+*.duckdb.wal
+dashboard/node_modules/
+dashboard/.evidence/
+dashboard/build/
+_archive/*.duckdb
+target/
+logs/
+.user.yml
+.DS_Store

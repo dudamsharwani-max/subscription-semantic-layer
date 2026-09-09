@@ -1,0 +1,9 @@
+subscription_semantic_layer:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: subscriptions.duckdb
+      threads: 4
+      extensions:
+        - httpfs

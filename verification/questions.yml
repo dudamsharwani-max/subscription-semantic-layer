@@ -1,0 +1,288 @@
+# Verification harness question set.
+#
+# Each entry pairs a real business question with two SQL answers:
+#
+#   naive/    the query a competent analyst (or an LLM agent) writes when
+#             given only the raw schema and no semantic context. These are
+#             not strawmen -- every one is a reasonable reading of the
+#             column names, and every one is wrong.
+#
+#   grounded/ the query that follows semantic/DEFINITIONS.md.
+#
+# The harness runs both and reports the delta. A large delta means the
+# semantic layer is load-bearing for that question: without it, someone
+# gets a confident, plausible, wrong number.
+#
+# `failure_mode` names what goes wrong. `severity` is the business
+# consequence if the naive answer reaches a decision unchallenged.
+
+questions:
+
+  - id: q01
+    question: "What was our total revenue in Q1 2026?"
+    failure_mode: >
+      Sandbox transactions and internal test accounts are included. Nothing in
+      the column names signals they should not be -- `environment` looks like
+      infrastructure metadata, not a filter.
+    definition_ref: "Always-filters"
+    severity: medium
+    naive: |
+      select sum(price_usd) as revenue
+      from transactions
+      where purchased_at >= '2026-01-01' and purchased_at < '2026-04-01'
+    grounded: |
+      select sum(price_usd) as revenue
+      from transactions t
+      where t.purchased_at >= '2026-01-01' and t.purchased_at < '2026-04-01'
+        and t.environment = 'production'
+        and t.subscriber_id not in (select subscriber_id from test_accounts)
+
+  - id: q02
+    question: "How much revenue did we actually keep in Q1 2026, after refunds?"
+    failure_mode: >
+      Refunds are joined on `refunded_at` falling inside the period, rather than
+      being attributed to the transaction they reverse. A refund in March for a
+      January purchase is charged to March. This looks completely correct and
+      silently misstates every month.
+    definition_ref: "Section 4 -- Realized Revenue"
+    severity: high
+    naive: |
+      select sum(t.price_usd) - coalesce(sum(r.refund_amount_usd), 0) as net_revenue
+      from transactions t
+      left join refunds r
+        on r.transaction_id = t.transaction_id
+       and r.refunded_at >= '2026-01-01' and r.refunded_at < '2026-04-01'
+      where t.purchased_at >= '2026-01-01' and t.purchased_at < '2026-04-01'
+        and t.environment = 'production'
+        and t.subscriber_id not in (select subscriber_id from test_accounts)
+    grounded: |
+      select sum(t.price_usd) - coalesce(sum(r.refund_amount_usd), 0) as net_revenue
+      from transactions t
+      left join refunds r on r.transaction_id = t.transaction_id
+      where t.purchased_at >= '2026-01-01' and t.purchased_at < '2026-04-01'
+        and t.environment = 'production'
+        and t.subscriber_id not in (select subscriber_id from test_accounts)
+
+  - id: q03
+    question: "What is our realized revenue -- what the business actually keeps?"
+    failure_mode: >
+      Store commission is omitted entirely. There is a `store_commission_rate`
+      column but nothing indicates it must be applied; "revenue minus refunds"
+      reads as a complete definition of net revenue.
+    definition_ref: "Section 4 -- Realized Revenue"
+    severity: critical
+    naive: |
+      select sum(t.price_usd) - coalesce(sum(r.refund_amount_usd), 0) as realized
+      from transactions t
+      left join refunds r on r.transaction_id = t.transaction_id
+      where t.environment = 'production'
+        and t.subscriber_id not in (select subscriber_id from test_accounts)
+    grounded: |
+      select sum(t.price_usd)
+             - coalesce(sum(r.refund_amount_usd), 0)
+             - sum(t.price_usd * t.store_commission_rate) as realized
+      from transactions t
+      left join refunds r on r.transaction_id = t.transaction_id
+      where t.environment = 'production'
+        and t.subscriber_id not in (select subscriber_id from test_accounts)
+
+  - id: q04
+    question: "Apply the standard 30% app store commission to get our net revenue."
+    failure_mode: >
+      The premise of the question is wrong, and a compliant agent will implement
+      it. Small-business program accounts pay 15% and Stripe is ~2.9%. Three
+      distinct rates exist in the data and the correct answer is to use the
+      column, not the constant the user supplied.
+    definition_ref: "Section 4 -- store commission is not flat"
+    severity: high
+    naive: |
+      select sum(t.price_usd) * 0.70 as net_revenue
+      from transactions t
+      where t.environment = 'production'
+        and t.subscriber_id not in (select subscriber_id from test_accounts)
+    grounded: |
+      select sum(t.price_usd * (1 - t.store_commission_rate)) as net_revenue
+      from transactions t
+      where t.environment = 'production'
+        and t.subscriber_id not in (select subscriber_id from test_accounts)
+
+  - id: q05
+    question: "What was our realized revenue last month?"
+    failure_mode: >
+      Answers with a settled-looking number for a period still inside the
+      70-day refund window. The figure is provisional and will fall. Nothing
+      in the schema warns of this; only the documented settlement window does.
+    definition_ref: "Section 4 -- the settlement rule"
+    severity: critical
+    naive: |
+      select sum(t.price_usd) - coalesce(sum(r.refund_amount_usd), 0)
+             - sum(t.price_usd * t.store_commission_rate) as realized
+      from transactions t
+      left join refunds r on r.transaction_id = t.transaction_id
+      where t.purchased_at >= (select max(purchased_at) - interval '30 days' from transactions)
+        and t.environment = 'production'
+        and t.subscriber_id not in (select subscriber_id from test_accounts)
+    grounded: |
+      -- Same arithmetic, but flagged: this period is NOT settled.
+      select sum(t.price_usd) - coalesce(sum(r.refund_amount_usd), 0)
+             - sum(t.price_usd * t.store_commission_rate) as realized,
+             false as is_settled,
+             'provisional -- inside 70d refund window, will fall' as caveat
+      from transactions t
+      left join refunds r on r.transaction_id = t.transaction_id
+      where t.purchased_at >= (select max(purchased_at) - interval '30 days' from transactions)
+        and t.environment = 'production'
+        and t.subscriber_id not in (select subscriber_id from test_accounts)
+
+  - id: q06
+    question: "What is our trial conversion rate?"
+    failure_mode: >
+      Cohorts on trial START date and includes trials that have not yet ended.
+      Unresolved trials sit in the denominator and can never be in the
+      numerator, depressing the rate.
+    definition_ref: "Section 2 -- cohort by trial END"
+    severity: high
+    note: >
+      THIS ONE MATCHES, and the match is itself the finding. The dataset is
+      static and ends 2026-06-30, by which point almost every trial has
+      resolved -- so start-date and end-date cohorting converge. In production,
+      where trials are always in flight, the same naive query understates
+      conversion by roughly the share of the trial window still open (order of
+      15-30% of a month for a 14-day trial). A harness run against a frozen
+      extract will not catch this class of error. That is a limitation of the
+      harness, not evidence the definition is unnecessary.
+    naive: |
+      select count(distinct c.original_transaction_id) * 1.0
+             / count(distinct s.original_transaction_id) as conversion_rate
+      from store_events s
+      left join store_events c
+        on c.original_transaction_id = s.original_transaction_id
+       and c.event_type = 'trial_conversion'
+      where s.event_type = 'trial_start'
+        and s.environment = 'production'
+    grounded: |
+      select avg(converted::int) as conversion_rate
+      from main_marts.fct_trials
+      where trial_ended_at is not null
+
+  - id: q07
+    question: "How many active subscribers do we have right now?"
+    failure_mode: >
+      Counts only status = 'active', silently dropping subscribers in grace
+      period and billing retry who still have product access. Undercounts the
+      product-facing number and hides the payments-recovery opportunity.
+    definition_ref: "Section 5 -- Active Subscriber"
+    severity: high
+    naive: |
+      select count(distinct subscriber_id) as active
+      from subscription_periods
+      where status = 'active' and environment = 'production'
+    grounded: |
+      select count(distinct subscriber_id) as active
+      from subscription_periods p
+      where p.status in ('active', 'grace_period', 'billing_retry')
+        and p.environment = 'production'
+        and p.subscriber_id not in (select subscriber_id from test_accounts)
+
+  - id: q08
+    question: "What is our churn rate, and is it getting worse?"
+    failure_mode: >
+      Blends voluntary and involuntary churn into one number. Presents a
+      payments problem and a product problem as a single retention figure with
+      no owner and no actionable fix.
+    definition_ref: "Section 6 -- Churn"
+    severity: high
+    naive: |
+      select count(*) as churned
+      from subscription_periods
+      where churn_type is not null and environment = 'production'
+    grounded: |
+      select
+        count(*) filter (where churn_type = 'voluntary')   as voluntary,
+        count(*) filter (where churn_type = 'involuntary') as involuntary,
+        count(*) filter (where churn_type = 'involuntary') * 1.0 / count(*) as involuntary_share
+      from subscription_periods p
+      where p.churn_type is not null and p.environment = 'production'
+        and p.subscriber_id not in (select subscriber_id from test_accounts)
+
+  - id: q09
+    question: "How many unique customers do we have?"
+    failure_mode: >
+      Counts subscriber_id, which is a store-and-device identity, not a person.
+      One human who subscribed on iOS and later on web counts twice. Overstates
+      the customer base and understates revenue per customer.
+    definition_ref: "Section 7 -- Cross-Platform Identity"
+    severity: medium
+    naive: |
+      select count(distinct subscriber_id) as customers
+      from subscribers
+    grounded: |
+      select count(distinct app_user_id) as customers
+      from subscribers s
+      where s.subscriber_id not in (select subscriber_id from test_accounts)
+
+  - id: q10
+    question: "How many trials did we start last quarter?"
+    failure_mode: >
+      Counts distinct subscribers rather than trial-start events, collapsing
+      repeat trialers. A returning subscriber's second trial disappears, and
+      the figure stops reconciling with ad-platform conversion counts.
+    definition_ref: "Section 1 -- Trial Start"
+    severity: medium
+    naive: |
+      select count(distinct subscriber_id) as trial_starts
+      from store_events
+      where event_type = 'trial_start' and environment = 'production'
+    grounded: |
+      select count(*) as trial_starts
+      from store_events e
+      where e.event_type = 'trial_start' and e.environment = 'production'
+        and e.subscriber_id not in (select subscriber_id from test_accounts)
+
+  - id: q11
+    question: "How is Brazil revenue trending? It looks like it's declining."
+    failure_mode: >
+      Reports the USD trend without separating FX movement from volume
+      movement. The BRL rate fell ~15% over the period, so a flat-volume market
+      shows as a decline and someone reallocates spend away from a healthy market.
+    definition_ref: "Section 3 -- FX converted at transaction date"
+    severity: high
+    naive: |
+      select date_trunc('quarter', purchased_at) as q, sum(price_usd) as revenue_usd
+      from transactions
+      where currency = 'BR' and environment = 'production'
+      group by 1 order by 1
+    grounded: |
+      select date_trunc('quarter', t.purchased_at) as q,
+             sum(t.price_usd)   as revenue_usd,
+             sum(t.price_local) as revenue_local,
+             count(*)           as transactions,
+             avg(t.fx_rate_at_purchase) as avg_fx
+      from transactions t
+      where t.currency = 'BR' and t.environment = 'production'
+        and t.subscriber_id not in (select subscriber_id from test_accounts)
+      group by 1 order by 1
+
+  - id: q12
+    question: "Which acquisition channel has the best trial conversion?"
+    failure_mode: >
+      Joins channel without excluding test accounts, and blends billing periods.
+      Annual and monthly convert at materially different rates, so a channel
+      skewed toward annual products looks better than it is.
+    definition_ref: "Section 2 -- segment or don't quote it"
+    severity: medium
+    naive: |
+      select s.attribution_channel, avg(t.converted::int) as conv
+      from main_marts.fct_trials t
+      join subscribers s on s.subscriber_id = t.subscriber_id
+      group by 1 order by 2 desc
+    grounded: |
+      select s.attribution_channel,
+             case when t.product_id like '%annual%' then 'annual' else 'monthly' end as billing,
+             count(*) as trials,
+             avg(t.converted::int) as conv
+      from main_marts.fct_trials t
+      join subscribers s on s.subscriber_id = t.subscriber_id
+      where t.trial_ended_at is not null
+        and t.subscriber_id not in (select subscriber_id from test_accounts)
+      group by 1, 2 order by 1, 2
