@@ -10,7 +10,7 @@ interesting if there is something for it to disambiguate.
 
 ---
 
-## The three findings
+## The findings
 
 **1. Realized revenue is 77.0% of tracked revenue.**
 Tracked is gross at purchase; realized nets out refunds and store commission.
@@ -37,6 +37,21 @@ definition. Largest error: **25.2%** (realized revenue, from omitting store
 commission). See [`verification/REPORT.md`](verification/REPORT.md).
 
 ---
+
+## Dashboard
+
+![Subscription metrics overview](docs/images/dashboard-overview.png)
+
+![Tracked vs realized revenue](docs/images/dashboard-revenue.png)
+
+Built with [Evidence](https://evidence.dev) — BI as code, so the dashboard lives
+in the same version-controlled repo as the dbt models and the definitions doc.
+
+Running it yourself requires your own warehouse. Evidence Core queries a hosted
+warehouse rather than a local file, so the mart tables are uploaded to MotherDuck
+and queried through the direct connector. `dashboard/connection.yaml` holds that
+credential and is gitignored, so a clone of this repo will run the pipeline and
+the harness but not the dashboard.
 
 ## What's here
 
